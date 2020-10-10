@@ -7,13 +7,6 @@ import time
 import tempfile
 from PIL import Image
 
-#Loading YOLO
-
-LABELS = open("yolo/coco.names").read().strip().split("\n")
-path_weights = "yolo/yolov3.weights"
-path_config = "yolo/yolov3.cfg"
-#load the trained YOLO net using dnn library in cv2
-net = cv2.dnn.readNetFromDarknet(path_config, path_weights)
 
 def yolo(img, net, confidence_threshold, threshold):
     print("In YOLO method")
@@ -66,6 +59,14 @@ client.confirmConnection()
 client.enableApiControl(True)
 print("API Control enabled: %s" % client.isApiControlEnabled())
 car_controls = airsim.CarControls()
+
+#Loading YOLO
+
+LABELS = open("yolo/coco.names").read().strip().split("\n")
+path_weights = "yolo/yolov3.weights"
+path_config = "yolo/yolov3.cfg"
+#load the trained YOLO net using dnn library in cv2
+net = cv2.dnn.readNetFromDarknet(path_config, path_weights)
 
 tmp_dir = os.path.join(tempfile.gettempdir(), "airsim_car")
 print ("Saving images to %s" % tmp_dir)
