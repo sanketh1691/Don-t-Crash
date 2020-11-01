@@ -613,7 +613,7 @@ while True:
     responses = client.simGetImages([airsim.ImageRequest("0", airsim.ImageType.DepthPerspective, True, False)])
 
     print("applying YOLO")
-    filepath = "yolo/yolo_outputs/"
+    filepath = "yolo/image_outputs/"
     responses2 = client.simGetImages([airsim.ImageRequest("0", airsim.ImageType.Scene, False, False)])
     cam_image = responses2[0]
     # get numpy array
@@ -638,5 +638,4 @@ while True:
     img_idx+=1
         
     current_state = transform_input(responses)
-    #yolo(responses.image_data_uint8,net,0.5,0.5)
     
