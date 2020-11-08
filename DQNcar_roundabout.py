@@ -219,7 +219,9 @@ class LinearEpsilonAnnealingExplorer(object):
         Returns:
              bool : True if exploring, False otherwise
         """
-        return np.random.rand() < self._epsilon(step)
+        exp = np.random.rand() < self._epsilon(step)
+        print('is exploring?' ,exp)
+        return exp
 
 def huber_loss(y, y_hat, delta):
     """ Compute the Huber Loss as part of the model graph
@@ -255,9 +257,9 @@ class DeepQAgent(object):
         Nature 518. "Human-level control through deep reinforcement learning" (Mnih & al. 2015)
     """
     def __init__(self, input_shape, nb_actions,
-                 gamma=0.99, explorer=LinearEpsilonAnnealingExplorer(1, 0.1, 1000000),
-                 learning_rate=0.025, momentum=0.95, minibatch_size=32,
-                 memory_size=500000, train_after=1000, train_interval=4, target_update_interval=500,
+                 gamma=0.95, explorer=LinearEpsilonAnnealingExplorer(1, 0.1, 100000),
+                 learning_rate=0.01, momentum=0.2, minibatch_size=16,
+                 memory_size=500000, train_after=500, train_interval=100, target_update_interval=2000,
                  monitor=True):
         self.input_shape = input_shape
         self.nb_actions = nb_actions
@@ -276,6 +278,7 @@ class DeepQAgent(object):
         # Metrics accumulator
         self._episode_rewards, self._episode_q_means, self._episode_q_stddev = [], [], []
 
+        '''
         # Action Value model (used by agent to interact with the environment)
         with default_options(activation=relu, init=he_uniform()):
             self._action_value_net = Sequential([
@@ -285,6 +288,15 @@ class DeepQAgent(object):
                 Dense(256, init=he_uniform(scale=0.01)),
                 Dense(nb_actions, activation=None, init=he_uniform(scale=0.01))
             ])
+        ''' 
+        with default_options(activation=relu, init=he_uniform()):
+            self._action_value_net = Sequential([
+                Dense(7, init=he_uniform(scale=0.01)),
+                Dense(16, init=he_uniform(scale=0.01)),
+                Dense(64, init=he_uniform(scale=0.01)),
+                Dense(nb_actions, activation=None, init=he_uniform(scale=0.01))
+            ])
+        
         self._action_value_net.update_signature(Tensor[input_shape])
 
         # Target model used to compute the target Q-values in training, updated
@@ -359,6 +371,7 @@ class DeepQAgent(object):
 
         # Keep track of interval action counter
         self._num_actions_taken += 1
+        print(self._num_actions_taken)
         return action
 
     def observe(self, old_state, action, reward, done):
@@ -399,23 +412,26 @@ class DeepQAgent(object):
         agent_step = self._num_actions_taken
 
         if agent_step >= self._train_after:
-            if (agent_step % self._train_interval) == 0:
-                pre_states, actions, post_states, rewards, terminals = self._memory.minibatch(self._minibatch_size)
-                self._trainer.train_minibatch(
-                    self._trainer.loss_function.argument_map(
-                        pre_states=pre_states,
-                        actions=Value.one_hot(actions.reshape(-1, 1).tolist(), self.nb_actions),
-                        post_states=post_states,
-                        rewards=rewards,
-                        terminals=terminals
-                    )
+            #if (agent_step % self._train_interval) == 0:
+            print('\ntraining with minibatch\n')
+            client.setCarControls(zero_controls)
+            pre_states, actions, post_states, rewards, terminals = self._memory.minibatch(self._minibatch_size)
+            self._trainer.train_minibatch(
+                self._trainer.loss_function.argument_map(
+                    pre_states=pre_states,
+                    actions=Value.one_hot(actions.reshape(-1, 1).tolist(), self.nb_actions),
+                    post_states=post_states,
+                    rewards=rewards,
+                    terminals=terminals
                 )
+            )
 
-                # Update the Target Network if needed
-                if (agent_step % self._target_update_interval) == 0:
-                    self._target_net = self._action_value_net.clone(CloneMethod.freeze)
-                    filename = "models\model%d" % agent_step
-                    self._trainer.save_checkpoint(filename)
+            # Update the Target Network if needed
+            if (agent_step % self._target_update_interval) == 0:
+                print('updating network')
+                self._target_net = self._action_value_net.clone(CloneMethod.freeze)
+                filename = "models\model%d" % agent_step
+                self._trainer.save_checkpoint(filename)
     
     def _plot_metrics(self):
         """Plot current buffers accumulated values to visualize agent learning
@@ -447,29 +463,40 @@ def transform_input(responses):
     return im_final
 
 def interpret_action(action):
-    car_controls.brake = 0
-    car_controls.throttle = 1
     if action == 0:
-        car_controls.throttle = 0
         car_controls.brake = 1
+        car_controls.throttle = 0
+        car_controls.steering = 0
     elif action == 1:
+        car_controls.brake = 0
+        car_controls.throttle = 1
         car_controls.steering = 0
     elif action == 2:
+        car_controls.brake = 0
+        car_controls.throttle = 1
         car_controls.steering = 0.5
     elif action == 3:
+        car_controls.brake = 0
+        car_controls.throttle = 1
         car_controls.steering = -0.5
     elif action == 4:
-        car_controls.steering = 0.25
+        car_controls.brake = 1
+        car_controls.throttle = 0
+        car_controls.steering = 0.5
     else:
-        car_controls.steering = -0.25
+        car_controls.brake = 1
+        car_controls.throttle = 0
+        car_controls.steering = -0.5
+        
+        
     return car_controls
 
 def dist_from(center, r, point):
     val = (((((point[0] - center[0])** 2) + ((point[1] - center[1])** 2))**(1/2)) - r)
     return max(val, -val)
     
-def compute_reward(car_state,record=False):
-    MAX_SPEED = 300
+def compute_reward(car_state,distance,record=False):
+    MAX_SPEED = 25
     MIN_SPEED = 0.2
     thresh_dist = 10
     beta = 3
@@ -480,7 +507,6 @@ def compute_reward(car_state,record=False):
     central = (22.5, -25)
     radius = 41
     
-    print(car_pt)    
     dist = dist_from(central, radius, car_pt[:2])
     
     if dist > thresh_dist:
@@ -488,11 +514,11 @@ def compute_reward(car_state,record=False):
         if record:
             line = '0,0,0,0,0,0\n'
     else:
-        reward_dist = 3*(10-dist)
-        reward_speed = 0.25 * (((car_state.speed - MIN_SPEED)/(MAX_SPEED - MIN_SPEED)) - 0.5)
-        reward = reward_dist + reward_speed
+        reward_dist = 2*(10-dist)
+        reward_speed = 1 * car_state.speed
+        reward = reward_dist + reward_speed + distance
         if record:
-            line = '%.2f,%.2f,%.2f,%.2f,%.2f,%.2f\n' % (car_pt[0],car_pt[1],car_state.speed,reward_speed,reward_dist,reward)
+            line = '%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f\n' % (car_pt[0],car_pt[1],car_state.speed,reward_speed,reward_dist, distance,reward)
     
     f.write(line)
     
@@ -520,10 +546,11 @@ car_controls = airsim.CarControls()
 
 # Make RL agent
 NumBufferFrames = 4
-SizeRows = 84
-SizeCols = 84
+SizeState = 7
+#SizeRows = 84
+#SizeCols = 84
 NumActions = 6
-agent = DeepQAgent((NumBufferFrames, SizeRows, SizeCols), NumActions, monitor=True)
+agent = DeepQAgent((NumBufferFrames, SizeState), NumActions, monitor=True)
 
 # Train
 epoch = 100
@@ -531,10 +558,14 @@ current_step = 0
 max_steps = epoch * 250000
 
 #responses = client.simGetImages([airsim.ImageRequest("0", airsim.ImageType.DepthPerspective, True, False)])
-responses = client.simGetImages([airsim.ImageRequest("0", airsim.ImageType.Scene, False, False)])
+#responses = client.simGetImages([airsim.ImageRequest("0", airsim.ImageType.Scene, False, False)])
+#current_state = transform_input(responses)
 
-current_state = transform_input(responses)
+zero_controls = car_controls
 
+current_state = np.zeros(SizeState)
+distance = 0
+last_pos = [0,0]
 record = True
 
 try:
@@ -551,26 +582,36 @@ try:
         client.setCarControls(car_controls)
 
         car_state = client.getCarState()
-        reward = compute_reward(car_state,record)
+        reward = compute_reward(car_state,distance,record)
         
         done = isDone(car_state, car_controls, reward)
         if done == 1:
             reward = -10
 
         agent.observe(current_state, action, reward, done)
-        agent.train()
+        if done:
+            agent.train()
 
         if done:
             client.reset()
             car_control = interpret_action(1)
             client.setCarControls(car_control)
             time.sleep(1)
-            current_step +=1
+            current_step += 1
+            last_pos = [0,0]
+            distance = 0
             
-        responses = client.simGetImages([airsim.ImageRequest("0", airsim.ImageType.Scene, False, False)])
+        #responses = client.simGetImages([airsim.ImageRequest("0", airsim.ImageType.Scene, False, False)])
         #responses = client.simGetImages([airsim.ImageRequest("0", airsim.ImageType.DepthPerspective, True, False)])
-        current_state = transform_input(responses)
-
+        #current_state = transform_input(responses)
+        cs = client.getCarState()
+        this_pos = [cs.kinematics_estimated.position.x_val, cs.kinematics_estimated.position.y_val]
+        distance += ((last_pos[0]-this_pos[0])**2 + (last_pos[1]-this_pos[1])**2)** 0.5
+        last_pos = this_pos
+        print(distance)
+        current_state = np.array([cs.speed]+last_pos+[cs.kinematics_estimated.linear_velocity.x_val, cs.kinematics_estimated.linear_velocity.y_val,
+                         cs.kinematics_estimated.linear_acceleration.x_val, cs.kinematics_estimated.linear_acceleration.y_val])
+        
 except Exception as inst:
     print(type(inst))    # the exception instance
     print(inst.args)     # arguments stored in .args
