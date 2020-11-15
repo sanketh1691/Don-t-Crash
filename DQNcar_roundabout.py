@@ -202,14 +202,18 @@ class LinearEpsilonAnnealingExplorer(object):
 
         Attributes:
             step (int)
-        """
+
         if step < 0:
             return self._start
         elif step > self._steps:
             return self._stop
         else:
             return self._step_size * step + self._start
-
+        """
+        epsilon_step =  (1-0.0001)**step
+        print('Epsilon: %.3f,  Step: %d' %(epsilon_step, step))
+        return epsilon_step
+        
     def is_exploring(self, step):
         """ Commodity method indicating if the agent should explore
 
@@ -220,7 +224,7 @@ class LinearEpsilonAnnealingExplorer(object):
              bool : True if exploring, False otherwise
         """
         exp = np.random.rand() < self._epsilon(step)
-        print('is exploring?' ,exp)
+        print('Exploring?' ,exp)
         return exp
 
 def huber_loss(y, y_hat, delta):
@@ -258,8 +262,8 @@ class DeepQAgent(object):
     """
     def __init__(self, input_shape, nb_actions,
                  gamma=0.95, explorer=LinearEpsilonAnnealingExplorer(1, 0.1, 100000),
-                 learning_rate=0.01, momentum=0.2, minibatch_size=16,
-                 memory_size=500000, train_after=500, train_interval=100, target_update_interval=2000,
+                 learning_rate=0.01, momentum=0.8, minibatch_size=16,
+                 memory_size=15000, train_after=100, train_interval=100, target_update_interval=500,
                  monitor=True):
         self.input_shape = input_shape
         self.nb_actions = nb_actions
@@ -274,6 +278,7 @@ class DeepQAgent(object):
         self._history = History(input_shape)
         self._memory = ReplayMemory(memory_size, input_shape[1:], 4)
         self._num_actions_taken = 0
+        self._num_trains = 0
 
         # Metrics accumulator
         self._episode_rewards, self._episode_q_means, self._episode_q_stddev = [], [], []
@@ -292,8 +297,9 @@ class DeepQAgent(object):
         with default_options(activation=relu, init=he_uniform()):
             self._action_value_net = Sequential([
                 Dense(7, init=he_uniform(scale=0.01)),
-                Dense(16, init=he_uniform(scale=0.01)),
-                Dense(64, init=he_uniform(scale=0.01)),
+                Dense(8, init=he_uniform(scale=0.01)),
+                #Dense(16, init=he_uniform(scale=0.01)),
+                #Dense(32, init=he_uniform(scale=0.01)),
                 Dense(nb_actions, activation=None, init=he_uniform(scale=0.01))
             ])
         
@@ -371,7 +377,7 @@ class DeepQAgent(object):
 
         # Keep track of interval action counter
         self._num_actions_taken += 1
-        print(self._num_actions_taken)
+        #print(self._num_actions_taken)
         return action
 
     def observe(self, old_state, action, reward, done):
@@ -413,7 +419,7 @@ class DeepQAgent(object):
 
         if agent_step >= self._train_after:
             #if (agent_step % self._train_interval) == 0:
-            print('\ntraining with minibatch\n')
+            print('\nTraining minibatch\n')
             client.setCarControls(zero_controls)
             pre_states, actions, post_states, rewards, terminals = self._memory.minibatch(self._minibatch_size)
             self._trainer.train_minibatch(
@@ -425,12 +431,12 @@ class DeepQAgent(object):
                     terminals=terminals
                 )
             )
-
+            self._num_trains += 1
             # Update the Target Network if needed
-            if (agent_step % self._target_update_interval) == 0:
+            if self._num_trains % 20 == 0:
                 print('updating network')
                 self._target_net = self._action_value_net.clone(CloneMethod.freeze)
-                filename = "models\model%d" % agent_step
+                filename = dirname+"\model%d" % agent_step
                 self._trainer.save_checkpoint(filename)
     
     def _plot_metrics(self):
@@ -464,27 +470,29 @@ def transform_input(responses):
 
 def interpret_action(action):
     if action == 0:
-        car_controls.brake = 1
-        car_controls.throttle = 0
+        car_controls.brake = 0
+        car_controls.throttle = 1
         car_controls.steering = 0
+        '''
     elif action == 1:
         car_controls.brake = 0
         car_controls.throttle = 1
         car_controls.steering = 0
+        '''
+    elif action == 1:
+        car_controls.brake = 0
+        car_controls.throttle = 1
+        car_controls.steering = 0.5
     elif action == 2:
         car_controls.brake = 0
         car_controls.throttle = 1
-        car_controls.steering = 0.5
+        car_controls.steering = -0.5
     elif action == 3:
         car_controls.brake = 0
-        car_controls.throttle = 1
-        car_controls.steering = -0.5
-    elif action == 4:
-        car_controls.brake = 1
         car_controls.throttle = 0
         car_controls.steering = 0.5
     else:
-        car_controls.brake = 1
+        car_controls.brake = 0
         car_controls.throttle = 0
         car_controls.steering = -0.5
         
@@ -497,7 +505,7 @@ def dist_from(center, r, point):
     
 def compute_reward(car_state,distance,record=False):
     MAX_SPEED = 25
-    MIN_SPEED = 0.2
+    MIN_SPEED = 0.05
     thresh_dist = 10
     beta = 3
 
@@ -514,29 +522,23 @@ def compute_reward(car_state,distance,record=False):
         if record:
             line = '0,0,0,0,0,0\n'
     else:
-        reward_dist = 2*(10-dist)
-        reward_speed = 1 * car_state.speed
-        reward = reward_dist + reward_speed + distance
+        reward_dist = 6*(10-dist)
+        reward_speed = 4 * car_state.speed
+        reward = reward_dist + reward_speed + distance*5
         if record:
             line = '%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f\n' % (car_pt[0],car_pt[1],car_state.speed,reward_speed,reward_dist, distance,reward)
+        print('Reward: %.3f\n'%reward)
     
     f.write(line)
-    
-    
-    print('reward', reward)
-    
     return reward
 
 def isDone(car_state, car_controls, reward):
-    
     done = 0
-    
     if reward < -1:
         done = 1
     if car_controls.brake == 0:
-        if car_state.speed <= 2:
+        if car_state.speed <= 0.5:
             done = 1
-    
     return done
 
 client = airsim.CarClient()
@@ -549,7 +551,7 @@ NumBufferFrames = 4
 SizeState = 7
 #SizeRows = 84
 #SizeCols = 84
-NumActions = 6
+NumActions = 5
 agent = DeepQAgent((NumBufferFrames, SizeState), NumActions, monitor=True)
 
 # Train
@@ -580,27 +582,27 @@ try:
         action = agent.act(current_state)
         car_controls = interpret_action(action)
         client.setCarControls(car_controls)
-
+        
         car_state = client.getCarState()
         reward = compute_reward(car_state,distance,record)
         
         done = isDone(car_state, car_controls, reward)
         if done == 1:
-            reward = -10
+            reward = -50
 
         agent.observe(current_state, action, reward, done)
-        if done:
-            agent.train()
 
         if done:
+            agent.train()
             client.reset()
-            car_control = interpret_action(1)
+            car_control = interpret_action(0)
             client.setCarControls(car_control)
+            print('Sleep then GO!')
             time.sleep(1)
             current_step += 1
             last_pos = [0,0]
             distance = 0
-            
+        time.sleep(0.06)
         #responses = client.simGetImages([airsim.ImageRequest("0", airsim.ImageType.Scene, False, False)])
         #responses = client.simGetImages([airsim.ImageRequest("0", airsim.ImageType.DepthPerspective, True, False)])
         #current_state = transform_input(responses)
@@ -608,14 +610,22 @@ try:
         this_pos = [cs.kinematics_estimated.position.x_val, cs.kinematics_estimated.position.y_val]
         distance += ((last_pos[0]-this_pos[0])**2 + (last_pos[1]-this_pos[1])**2)** 0.5
         last_pos = this_pos
-        print(distance)
         current_state = np.array([cs.speed]+last_pos+[cs.kinematics_estimated.linear_velocity.x_val, cs.kinematics_estimated.linear_velocity.y_val,
                          cs.kinematics_estimated.linear_acceleration.x_val, cs.kinematics_estimated.linear_acceleration.y_val])
         
-except Exception as inst:
+except KeyboardInterrupt as inst:
     print(type(inst))    # the exception instance
     print(inst.args)     # arguments stored in .args
     print(inst)
     traceback.print_exc() 
+    save = input('save model and log (y/n): ')
+    
+    if save.lower() == 'n':
+        import shutil    
+        f.close()
+        shutil.rmtree(dirname)
+        
+        
+        
 
 client.enableApiControl(False)
