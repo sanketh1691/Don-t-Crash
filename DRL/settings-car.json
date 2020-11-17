@@ -1,0 +1,10 @@
+{
+  "SeeDocsAt": "https://github.com/Microsoft/AirSim/blob/master/docs/settings.md",
+  "SettingdVersion": 1.0,
+  "SubWindows": [
+    {"WindowID": 0, "ImageType": 3, "CameraID": 0},
+    {"WindowID": 1, "ImageType": 0, "CameraID": 3},
+    {"WindowID": 2, "ImageType": 6, "CameraID": 1}
+  ],
+  "SimMode": "Car"
+}
