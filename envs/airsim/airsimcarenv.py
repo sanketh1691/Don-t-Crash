@@ -21,8 +21,8 @@ class AirSimCarEnv(gym.Env):
     airsimClient = None
     def __init__(self):
         # left depth, center depth, right depth, steering
-        self.low = np.array([0.0, 0.0, 0.0, 0])
-        self.high = np.array([100.0, 100.0, 100.0, 5])
+        self.low = np.array([0.0, 0.0, 0.0, 0, 0, 0])
+        self.high = np.array([100.0, 100.0, 100.0, 5, 5000.0, 5000.0])
         
         self.observation_space = spaces.Box(self.low, self.high)
         self.action_space = spaces.Discrete(5)
@@ -34,6 +34,8 @@ class AirSimCarEnv(gym.Env):
         self.allLogs = {'speed':[0]}
         self.dist = 0
         self.last_pos = [0,0]
+        self.collision = False
+        self.close_l, self.close_r = 5000, 5000
         
         self._seed()
         self.stallCount = 0
@@ -41,18 +43,18 @@ class AirSimCarEnv(gym.Env):
         global airsimClient
         airsimClient = myAirSimCarClient()
         
-        '''
-        self.LABELS = open("../AirSim/PythonClient/car/yolo/coco.names").read().strip().split("\n")
-        self.path_weights = "../AirSim/PythonClient/car/yolo/yolov3.weights"
-        self.path_config = "../AirSim/PythonClient/car/yolo/yolov3.cfg"        
-        '''
-        
         self.LABELS = open("../Yolo-Fastest/data/coco.names").read().strip().split("\n")
         self.path_weights = "../Yolo-Fastest/Yolo-Fastest/COCO/yolo-fastest.weights"
         self.path_config = "../Yolo-Fastest/Yolo-Fastest/COCO/yolo-fastest.cfg"
         
         np.random.seed(42)
         self.net = cv2.dnn.readNetFromDarknet(self.path_config, self.path_weights)
+        self.dirname = time.strftime("%Y_%m_%d_%H_%M") + '_yolo' 
+        os.mkdir(self.dirname)
+        self.f = open(self.dirname+ '/log.txt','w')
+        firstline = 'x,y,reward,collision\n'
+        self.f.write(firstline)
+         
          
     def _seed(self, seed=None):
         self.np_random, seed = seeding.np_random(seed)
@@ -63,8 +65,15 @@ class AirSimCarEnv(gym.Env):
         steer = self.steer
         reward = 0
         
+        this_pos = [self.car_state.kinematics_estimated.position.x_val, self.car_state.kinematics_estimated.position.y_val]
+        this_dist = ((self.last_pos[0]-this_pos[0])**2 + (self.last_pos[1]-this_pos[1])**2)** 0.5
+        self.dist += this_dist
+        self.last_pos = this_pos
+        
         if mode == 'roam' or mode == 'smooth':
-            pass
+            reward += this_dist
+            if self.collision:
+                reward -= 10
             
         if mode == 'smooth':
             # also penalize on jerky motion, based on a fake G-sensor
@@ -72,20 +81,27 @@ class AirSimCarEnv(gym.Env):
             g = abs(steerLog[-1] - steerLog[-2]) * 5
             reward -= g
             
-        return [reward, dSpeed]
+        return [reward, 0]
     
 
     def get_closeness(self,image,x1,y1,w1,h1):
         #color2 = [110,220,69]
-        k = 0.1
+        
+        k = 3
         start_pt = (int(x1+w1/2),144)
         end_pt = (int(x1+w1/2),y1+h1)
         #cv2.line(image, start_pt, end_pt, color2,2)
         distance = (start_pt[0]-end_pt[0])**2 + (start_pt[1]-end_pt[1])**2
         distance = math.sqrt(distance)
         area = w1*h1
-        return round(k*area/distance,3)
-
+        return round(k*area/(distance+0.0000000001),3)
+        
+    '''
+    def get_closeness_(self,image,x1,y1,w1,h1):
+        distance = 144 - y1
+        return distance
+    '''
+    
     def yolo(self, img, net, confidence_threshold, threshold):
         #print("In YOLO method")
         #image = cv2.imread(img)
@@ -134,11 +150,21 @@ class AirSimCarEnv(gym.Env):
                 cv2.putText(image, text, (x,y-10), cv2.FONT_HERSHEY_SIMPLEX,
                             0.25, (180,100,70), 1)
                 cl = self.get_closeness(image,x,y,w,h)
-                category = (x+w/2)//85.33333333
-                close.update({(self.LABELS[classIDs[i]],confidences[i]):[cl,x+w/2], category})
+                close.update({(self.LABELS[classIDs[i]],confidences[i]):[cl,x+w/2,int((x+w/2)>128)]})
         #df = pd.DataFrame(columns=['Object','Confidence','Closeness'])
-        close_metric = sorted(close.items(), key=lambda x: x[1], reverse=True)
-        return image, close_metric
+        
+        #close_metric = sorted(close.items(), key=lambda x: x[1], reverse=True)
+        
+        close_l = 5000
+        close_r = 5000
+        
+        for i in close_metric:
+            if i[1][-1]:
+                close_r = min(i[1][0],close_r)    
+            else:
+                close_l = min(i[1][0],close_l)
+                
+        return image, close_l, close_r
 
         
     def _step(self, action):
@@ -154,13 +180,15 @@ class AirSimCarEnv(gym.Env):
         
         airsimClient.setCarControls(gas, steer)                  
         self.steer = steer
-        
+
         collision_info = airsimClient.simGetCollisionInfo()
         if collision_info.time_stamp != self.last_collision and collision_info.time_stamp != 0:
             done = True
+            self.collision = True
         else:
             done = False
-        
+            self.collision = False
+
         '''
         elif speed < 0.5:
             self.stallCount += 1
@@ -178,21 +206,22 @@ class AirSimCarEnv(gym.Env):
         cdepth = self.sensors[1]
         self.state = self.sensors
         self.state.append(action)
+        self.state += [self.close_l, self.close_r]
 
         self.addToLog('speed', speed)
         self.addToLog('steer', steer)
         steerLookback = 17
-        steerAverage = np.average(self.allLogs['steer'][-steerLookback:])   
+        steerAverage = np.average(self.allLogs['steer'][-steerLookback:])
         self.steerAverage = steerAverage
         
         responses2 = airsimClient.simGetImages([airsim.ImageRequest("0", airsim.ImageType.Scene, False, False)])
         cam_image = responses2[0]
-        img1d = np.fromstring(cam_image.image_data_uint8, dtype=np.uint8) 
-        img_rgb = img1d.reshape(cam_image.height, cam_image.width, 3)
-
-        self.yolores, self.closeness = self.yolo(img_rgb,self.net,0.5,0.5)
-        print()
-        print(closeness)
+        img1d = np.fromstring(cam_image.image_data_uint8, dtype=np.uint8)
+        try:
+            img_rgb = img1d.reshape(cam_image.height, cam_image.width, 3)
+            self.yolores, self.close_r, self.close_l = self.yolo(img_rgb,self.net,0.5,0.5)
+        except:
+            pass
         
         # Training using the Roaming mode 
         reward, dSpeed = self.computeReward('roam')
@@ -207,10 +236,6 @@ class AirSimCarEnv(gym.Env):
         sys.stdout.write("\r\x1b[K{}/{}==>reward/depth/steer/speed: {:.0f}/{:.0f}   \t({:.1f}/{:.1f}/{:.1f})   \t{:.1f}/{:.1f}  \t{:.2f}/{:.2f}  ".format(self.episodeN, self.stepN, reward, rewardSum, self.state[0], self.state[1], self.state[2], steer, steerAverage, speed, dSpeed))
         sys.stdout.flush()
         
-        # placeholder for additional logic
-        if done:
-            pass
-
         return np.array(self.state), reward, done, {}
 
     def addToLog (self, key, value):
@@ -232,5 +257,9 @@ class AirSimCarEnv(gym.Env):
         self.allLogs = {'speed':[0]}
         
         # Randomize the initial steering to broaden learning
-        self.state = (100, 100, 100, random.uniform(-1.0, 1.0))
+        self.state = (100, 100, 100, random.uniform(-1.0, 1.0), 5000, 5000)
+        
+        self.f.close()
+        self.f = open(self.dirname+ '/log.txt','a')
+        
         return np.array(self.state)
