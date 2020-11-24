@@ -1,37 +1,20 @@
-## Welcome to GitHub Pages
+# Don't Crash : Just stop with style
 
-You can use the [editor on GitHub](https://github.com/sanketh1691/Don-t-Crash/edit/gh-pages/index.md) to maintain and preview the content for your website in Markdown files.
+![Image of a Car](Don't.jpg)
 
-Whenever you commit to this repository, GitHub Pages will run [Jekyll](https://jekyllrb.com/) to rebuild the pages in your site, from the content in your Markdown files.
+### Problem Statement
+The goal of this project is to build an agent to perform autonomous driving in a simulated environment. Autonomous driving is an important area of research as it can make roads safer  by helping to reduce the number of avoidable accidents caused by human error in driving. It can also allow those with disabilities or senior citizens to be able to travel independently and safely. Simulation is a key to self-driving research, because we can test customized situations without facing real-world consequences. For our project, we have been using AirSim, a simulation environment created for autonomous driving research. We would like to test various objectives, such as longest distance without crashing, longest time without crashing, smooth driving, speed, interacting with moving pedestrians, cars. We want to build on AirSim’s framework by employing Computer Vision algorithms for perception and training a Reinforcement Learning agent to perceive and act in our simulation. Furthermore, we wish to compare the agent’s performance when trained on Reinforcement learning and Imitation learning.
 
-### Markdown
+#### Demo Video of the Project 
+<iframe width="500" height="300" src="https://drive.google.com/file/d/1rzgIjldaCTjWNn65jxPnQ5xmIMGM65DF/preview" frameborder="0" allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
 
-Markdown is a lightweight and easy-to-use syntax for styling your writing. It includes conventions for
+#### Team:
+* [Abhilash Karpurapu](https://www.linkedin.com/in/abhilash-karpurapu-5b7275131/)
+* [Abhivineet Veeraghanta](https://www.linkedin.com/in/abhivineet/)
+* [Haripriya Dharmala](https://www.linkedin.com/in/haripriya-dharmala/)
+* [Jaimin Patel](https://www.linkedin.com/in/jaimindpatel/)
+* [Naga Sanketh Vysyaraju](https://www.linkedin.com/in/naga-sanketh-vysyaraju/)
+* [Shreya Kunchakuri](https://www.linkedin.com/in/shreya-kunchakuri-743662125/)
 
-```markdown
-Syntax highlighted code block
 
-# Header 1
-## Header 2
-### Header 3
 
-- Bulleted
-- List
-
-1. Numbered
-2. List
-
-**Bold** and _Italic_ and `Code` text
-
-[Link](url) and ![Image](src)
-```
-
-For more details see [GitHub Flavored Markdown](https://guides.github.com/features/mastering-markdown/).
-
-### Jekyll Themes
-
-Your Pages site will use the layout and styles from the Jekyll theme you have selected in your [repository settings](https://github.com/sanketh1691/Don-t-Crash/settings). The name of this theme is saved in the Jekyll `_config.yml` configuration file.
-
-### Support or Contact
-
-Having trouble with Pages? Check out our [documentation](https://docs.github.com/categories/github-pages-basics/) or [contact support](https://github.com/contact) and we’ll help you sort it out.
